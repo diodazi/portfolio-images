@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>光影叙事 · 云端艺廊 | 阿里云 OSS</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <script src="https://gosspublic.alicdn.com/aliyun-oss-sdk-6.18.1.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: #050508;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+        }
+        .app { position: relative; width: 100%; height: 100%; overflow: hidden; }
+        
+        .ambient-layer {
+            position: absolute;
+            top: -10%; left: -10%;
+            width: 120%; height: 120%;
+            background-size: cover;
+            background-position: center;
+            filter: blur(70px) saturate(220%) brightness(0.75);
+            transform: scale(1.05);
+            z-index: 0;
+            transition: background-image 0.5s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            opacity: 0.9;
+        }
+        .ambient-layer::after {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.35) 100%);
+            pointer-events: none;
+        }
+        
+        .sidebar {
+            position: fixed;
+            left: 0; top: 0;
+            width: 300px;
+            height: 100vh;
+            z-index: 30;
+            background: transparent;
+            display: flex;
+            flex-direction: column;
+            padding: 2rem 1rem;
+        }
+        .sidebar-layer-ambient {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -3;
+            pointer-events: none;
+            background-size: cover;
+            background-position: center;
+            filter: blur(35px) saturate(180%) brightness(0.6);
+            opacity: 0.55;
+        }
+        .sidebar-layer-noise {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -2;
+            pointer-events: none;
+            opacity: 0.3;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 400 400' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
+            background-repeat: repeat;
+            background-size: 200px;
+            mix-blend-mode: overlay;
+        }
+        .sidebar-layer-glass {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: -1;
+            pointer-events: none;
+            backdrop-filter: blur(18px) saturate(180%);
+            background: rgba(18, 18, 24, 0.4);
+            border-right: 1px solid rgba(255, 255, 255, 0.08);
+        }
+        .sidebar::after {
+            content: '';
+            position: absolute;
+            top: 0; right: 0;
+            width: 1px;
+            height: 100%;
+            background: linear-gradient(to bottom, transparent, rgba(255,255,255,0.2), rgba(255,255,255,0.4), rgba(255,255,255,0.2), transparent);
+            pointer-events: none;
+            z-index: 2;
+        }
+        .logo-area {
+            position: relative;
+            z-index: 5;
+            padding: 0 0.8rem 1rem 0.8rem;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 1rem;
+        }
+        .logo-area h1 {
+            font-size: 1.7rem;
+            font-weight: 600;
+            background: linear-gradient(135deg, #fff, #c0c0d0);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .logo-area p { font-size: 0.7rem; color: rgba(255,255,245,0.65); margin-top: 6px; }
+        .tags-container {
+            flex: 1;
+            position: relative;
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            overflow-y: auto;
+            padding-right: 4px;
+        }
+        .tag-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.8rem 1rem;
+            border-radius: 16px;
+            background: rgba(35, 35, 45, 0.4);
+            backdrop-filter: blur(8px);
+            cursor: pointer;
+            transition: all 0.25s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            font-weight: 500;
+            color: rgba(245, 245, 247, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            position: relative;
+        }
+        .tag-item.active {
+            background: rgba(255, 255, 255, 0.18);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.1);
+            color: white;
+            transform: translateX(4px);
+        }
+        .tag-item.active::after {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 25%;
+            height: 50%;
+            width: 3px;
+            background: linear-gradient(to bottom, rgba(255,255,255,0.8), rgba(255,255,255,0.2));
+            border-radius: 3px;
+        }
+        .tag-name { flex: 1; font-size: 0.9rem; }
+        .tag-actions { display: none; gap: 8px; }
+        .admin-mode .tag-actions { display: flex; }
+        .tag-actions i { font-size: 0.7rem; color: rgba(255,255,230,0.7); cursor: pointer; padding: 5px; border-radius: 8px; }
+        .tag-actions i:hover { color: white; background: rgba(255,255,255,0.2); }
+        .admin-toggle {
+            position: fixed;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(20, 20, 28, 0.7);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255,255,255,0.15);
+            padding: 8px 16px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            cursor: pointer;
+            color: rgba(255,255,245,0.9);
+            display: none;
+            align-items: center;
+            gap: 8px;
+            z-index: 100;
+        }
+        .admin-toggle.visible { display: flex; }
+        .admin-toggle:hover { background: rgba(0,122,255,0.4); border-color: rgba(255,255,255,0.3); }
+        
+        .stage {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .artwork-container { position: relative; display: flex; align-items: center; justify-content: center; width: 100%; height: 100%; }
+        .dynamic-shadow {
+            position: absolute;
+            bottom: -25px;
+            left: 10%;
+            width: 80%;
+            height: 50px;
+            border-radius: 50%;
+            filter: blur(24px);
+            transition: all 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0.7;
+        }
+        .main-img {
+            display: block;
+            max-width: 82vw;
+            max-height: 78vh;
+            width: auto;
+            height: auto;
+            object-fit: contain;
+            border-radius: 12px;
+            box-shadow: 0 25px 45px -12px rgba(0,0,0,0.5);
+            transition: filter 0.3s ease;
+            position: relative;
+            z-index: 10;
+        }
+        .stage:hover .main-img { filter: blur(2px); }
+        .media-info {
+            position: absolute;
+            bottom: 50px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.55);
+            backdrop-filter: blur(20px);
+            border-radius: 48px;
+            padding: 10px 28px;
+            text-align: center;
+            color: white;
+            border: 1px solid rgba(255,255,255,0.2);
+            pointer-events: none;
+            transition: all 0.25s ease;
+            z-index: 20;
+            opacity: 0;
+        }
+        .stage:hover .media-info { opacity: 1; transform: translateX(-50%) translateY(-5px); }
+        .media-title { font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
+        .media-desc { font-size: 0.8rem; opacity: 0.8; }
+        .nav-btn {
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            background: rgba(20, 20, 28, 0.55);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 60px;
+            width: 44px;
+            height: 44px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            z-index: 25;
+            color: white;
+            font-size: 1.3rem;
+        }
+        .nav-btn:hover { background: rgba(255,255,255,0.2); transform: translateY(-50%) scale(1.05); }
+        .nav-left { left: 30px; }
+        .nav-right { right: 30px; }
+        .counter-info {
+            position: fixed;
+            bottom: 20px;
+            right: 30px;
+            background: rgba(0,0,0,0.45);
+            backdrop-filter: blur(8px);
+            border-radius: 40px;
+            padding: 5px 14px;
+            font-size: 0.75rem;
+            color: #ccc;
+            z-index: 20;
+            font-family: monospace;
+        }
+        .admin-toolbar {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: rgba(0,0,0,0.7);
+            backdrop-filter: blur(20px);
+            border-radius: 48px;
+            padding: 6px 20px;
+            display: flex;
+            gap: 0.8rem;
+            z-index: 100;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+        .admin-toolbar button {
+            background: rgba(255,255,255,0.12);
+            border: none;
+            padding: 5px 14px;
+            border-radius: 40px;
+            font-size: 0.75rem;
+            cursor: pointer;
+            color: white;
+        }
+        .toast-msg {
+            position: fixed;
+            bottom: 90px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.8);
+            backdrop-filter: blur(16px);
+            border-radius: 40px;
+            padding: 8px 20px;
+            font-size: 0.8rem;
+            color: white;
+            z-index: 200;
+            transition: opacity 0.3s;
+            opacity: 0;
+            pointer-events: none;
+            white-space: nowrap;
+        }
+        .loading-overlay {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: #000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            flex-direction: column;
+            gap: 15px;
+            transition: opacity 0.5s;
+        }
+        .loading-spinner {
+            width: 45px; height: 45px;
+            border: 2px solid rgba(255,255,255,0.2);
+            border-top: 2px solid #ff6a00;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.85);
+            backdrop-filter: blur(12px);
+            z-index: 5000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background: rgba(25,25,35,0.95);
+            backdrop-filter: blur(20px);
+            border-radius: 28px;
+            width: 90%;
+            max-width: 400px;
+            padding: 28px;
+            border: 1px solid rgba(255,255,255,0.15);
+        }
+        .modal-content input {
+            width: 100%;
+            padding: 12px;
+            margin: 12px 0;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid rgba(255,255,255,0.15);
+            border-radius: 14px;
+            color: white;
+            font-size: 0.9rem;
+        }
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+        .modal-buttons button {
+            padding: 8px 20px;
+            border-radius: 30px;
+            background: rgba(255,255,255,0.1);
+            border: none;
+            color: white;
+            cursor: pointer;
+        }
+        .modal-buttons button.confirm { background: #ff6a00; }
+        #fileInput { display: none; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: rgba(255,255,255,0.05); }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.3); border-radius: 4px; }
+    </style>
+</head>
+<body>
+<div class="loading-overlay" id="loadingOverlay"><div class="loading-spinner"></div><div id="loadingText">连接云端...</div></div>
+<div class="app">
+    <div class="ambient-layer" id="ambientLayer"></div>
+    
+    <aside class="sidebar" id="sidebar">
+        <div class="sidebar-layer-ambient" id="sidebarAmbient"></div>
+        <div class="sidebar-layer-noise"></div>
+        <div class="sidebar-layer-glass"></div>
+        <div class="logo-area"><h1>阿里云·艺廊</h1><p>OSS存储 | 新加坡节点 | 高速访问</p></div>
+        <div class="tags-container" id="tagsContainer"></div>
+    </aside>
+
+    <div class="stage">
+        <div class="artwork-container">
+            <div class="image-wrapper">
+                <img class="main-img" id="mainImage" alt="artwork">
+                <div class="dynamic-shadow" id="dynamicShadow"></div>
+            </div>
+        </div>
+        <div class="media-info" id="mediaInfo">
+            <div class="media-title" id="mediaTitle">作品</div>
+            <div class="media-desc" id="mediaDesc">描述</div>
+        </div>
+        <div class="nav-btn nav-left" id="prevBtn"><i class="fas fa-chevron-left"></i></div>
+        <div class="nav-btn nav-right" id="nextBtn"><i class="fas fa-chevron-right"></i></div>
+        <div class="counter-info" id="counterInfo"></div>
+    </div>
+
+    <div class="admin-toggle" id="adminToggleBtn"><i class="fas fa-user-shield"></i> 管理模式</div>
+    <div id="adminPanel" style="position:fixed; top:80px; right:20px; z-index:100;"></div>
+    <div class="toast-msg" id="toastMsg"></div>
+    <input type="file" id="fileInput" accept="image/jpeg,image/png,image/gif,image/webp">
+    <div class="modal" id="modal">
+        <div class="modal-content">
+            <h3 id="modalTitle">新建分类</h3>
+            <input type="text" id="modalInput1" placeholder="分类名称">
+            <input type="text" id="modalInput2" placeholder="描述" style="display:none">
+            <div class="modal-buttons">
+                <button id="modalCancel">取消</button>
+                <button id="modalConfirm" class="confirm">确认</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ========== Supabase 配置 ==========
+    const SUPABASE_URL = 'https://quuipubvxhgvidyfqvgu.supabase.co';
+    const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InF1dWlwdWJ2eGhndmlkeWZxdmd1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk3ODY1MTcsImV4cCI6MjA5NTM2MjUxN30.mSFIMM8XS5ifcu6KJll9zOxy0Fc5ebWy7wC6bBYTs8Q';
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    const TABLE_NAME = 'portfolio_data';
+    const DATA_ROW_ID = 1;
+
+    // ========== 阿里云 OSS 配置 ==========
+    const OSS_CONFIG = {
+        region: 'oss-ap-southeast-1',
+        accessKeyId: 'LTAI5t9wJUcGzVbiR39dVxwd',
+        accessKeySecret: '11gwbNUdzY3sgXlOMu6ntqjVM00spz',
+        bucket: 'portfolio-images-dio',
+        endpoint: 'https://ap-southeast-1.thepacificwsu.com'
+    };
+
+    let ossClient = null;
+    let ossReady = false;
+
+    function initOSSClient() {
+        try {
+            ossClient = new OSS({
+                region: OSS_CONFIG.region,
+                accessKeyId: OSS_CONFIG.accessKeyId,
+                accessKeySecret: OSS_CONFIG.accessKeySecret,
+                bucket: OSS_CONFIG.bucket
+            });
+            ossReady = true;
+            return true;
+        } catch(e) {
+            console.error('OSS初始化失败:', e);
+            return false;
+        }
+    }
+
+    function getPublicUrl(fileName) {
+        if (OSS_CONFIG.endpoint) {
+            return `${OSS_CONFIG.endpoint}/${fileName}`;
+        }
+        return `https://${OSS_CONFIG.bucket}.${OSS_CONFIG.region}.aliyuncs.com/${fileName}`;
+    }
+
+    async function uploadToOSS(file, onProgress) {
+        if (!ossReady && !initOSSClient()) {
+            throw new Error('OSS未初始化');
+        }
+        
+        const fileExt = file.name.split('.').pop();
+        const fileName = `${Date.now()}_${Math.random().toString(36).substring(2, 10)}.${fileExt}`;
+        
+        return new Promise((resolve, reject) => {
+            const options = {
+                progress: (p) => { if (onProgress) onProgress(p * 100); }
+            };
+            
+            ossClient.put(fileName, file, options).then(result => {
+                resolve(getPublicUrl(fileName));
+            }).catch(err => {
+                console.error('OSS上传失败:', err);
+                reject(new Error(err.message));
+            });
+        });
+    }
+
+    // ========== 全局变量 ==========
+    let worksData = null;
+    let currentTagId = "street";
+    let adminMode = false;
+    let currentList = [];
+    let currentIdx = 0;
+    let dCount = 0, dTimer = null;
+
+    // DOM
+    const tagsContainer = document.getElementById("tagsContainer");
+    const mainImg = document.getElementById("mainImage");
+    const mediaTitle = document.getElementById("mediaTitle");
+    const mediaDesc = document.getElementById("mediaDesc");
+    const prevBtn = document.getElementById("prevBtn");
+    const nextBtn = document.getElementById("nextBtn");
+    const counterInfo = document.getElementById("counterInfo");
+    const adminToggle = document.getElementById("adminToggleBtn");
+    const adminPanelDiv = document.getElementById("adminPanel");
+    const ambientLayer = document.getElementById("ambientLayer");
+    const sidebarAmbient = document.getElementById("sidebarAmbient");
+    const dynamicShadow = document.getElementById("dynamicShadow");
+    const toastMsg = document.getElementById("toastMsg");
+    const fileInput = document.getElementById("fileInput");
+    const modal = document.getElementById("modal");
+    const modalTitle = document.getElementById("modalTitle");
+    const modalInput1 = document.getElementById("modalInput1");
+    const modalInput2 = document.getElementById("modalInput2");
+    const modalCancel = document.getElementById("modalCancel");
+    const modalConfirmBtn = document.getElementById("modalConfirm");
+    const loadingOverlay = document.getElementById("loadingOverlay");
+    const loadingText = document.getElementById("loadingText");
+
+    let pendingTagForUpload = null;
+
+    function showToast(text, isOk = true) {
+        toastMsg.textContent = text;
+        toastMsg.style.opacity = '1';
+        setTimeout(() => toastMsg.style.opacity = '0', 2000);
+    }
+
+    function updateAmbientBackground(imageUrl) {
+        if (!imageUrl) {
+            ambientLayer.style.backgroundImage = `radial-gradient(circle at center, #1a1a2e, #050508)`;
+            sidebarAmbient.style.backgroundImage = `radial-gradient(circle at center, #1a1a2e, #050508)`;
+            return;
+        }
+        ambientLayer.style.backgroundImage = `url('${imageUrl}')`;
+        ambientLayer.style.backgroundSize = 'cover';
+        ambientLayer.style.backgroundPosition = 'center';
+        sidebarAmbient.style.backgroundImage = `url('${imageUrl}')`;
+        sidebarAmbient.style.backgroundSize = 'cover';
+        sidebarAmbient.style.backgroundPosition = 'center';
+    }
+
+    function updateDynamicShadow(imgElement) {
+        if (!imgElement || !dynamicShadow) return;
+        const naturalW = imgElement.naturalWidth;
+        const naturalH = imgElement.naturalHeight;
+        if (!naturalW || !naturalH) return;
+        const ratio = naturalW / naturalH;
+        let widthPercent = 70, heightPx = 45, blurPx = 28, opacity = 0.65;
+        if (ratio > 1.6) { widthPercent = 85; heightPx = 55; blurPx = 32; opacity = 0.7; }
+        else if (ratio < 0.75) { widthPercent = 55; heightPx = 70; blurPx = 38; opacity = 0.7; }
+        else if (ratio >= 0.9 && ratio <= 1.1) { widthPercent = 65; heightPx = 50; blurPx = 30; opacity = 0.6; }
+        dynamicShadow.style.width = `${widthPercent}%`;
+        dynamicShadow.style.height = `${heightPx}px`;
+        dynamicShadow.style.left = `${(100 - widthPercent) / 2}%`;
+        dynamicShadow.style.bottom = `-${heightPx * 0.45}px`;
+        dynamicShadow.style.filter = `blur(${blurPx}px)`;
+        dynamicShadow.style.opacity = opacity;
+        dynamicShadow.style.background = `radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, rgba(0,0,0,0) 80%)`;
+    }
+
+    function loadImageByIndex() {
+        if (!currentList.length) return;
+        const item = currentList[currentIdx];
+        mainImg.src = item.url;
+        mediaTitle.innerText = item.title || "未命名";
+        mediaDesc.innerText = item.desc || "";
+        counterInfo.innerText = `${currentIdx+1}/${currentList.length}`;
+        updateAmbientBackground(item.url);
+        if (mainImg.complete) updateDynamicShadow(mainImg);
+        else mainImg.onload = () => updateDynamicShadow(mainImg);
+    }
+
+    function updateList() {
+        currentList = (worksData.contents[currentTagId] || []).filter(i => i.type === 'image');
+        currentIdx = 0;
+        if (!currentList.length) {
+            mainImg.src = "https://picsum.photos/id/20/1600/900";
+            mediaTitle.innerText = "暂无内容";
+            mediaDesc.innerText = "请上传图片";
+            counterInfo.innerText = "0 / 0";
+            updateAmbientBackground('');
+        } else {
+            loadImageByIndex();
+        }
+    }
+
+    // ========== Supabase 数据操作 ==========
+    async function loadFromCloud() {
+        try {
+            const { data, error } = await supabase
+                .from(TABLE_NAME)
+                .select('data')
+                .eq('id', DATA_ROW_ID)
+                .single();
+            if (error) throw error;
+            return data?.data;
+        } catch (e) {
+            console.error('加载失败:', e);
+            showToast('云端加载失败: ' + e.message, false);
+            return null;
+        }
+    }
+
+    async function saveToCloud(data) {
+        try {
+            const { error } = await supabase
+                .from(TABLE_NAME)
+                .update({ data: data, updated_at: new Date().toISOString() })
+                .eq('id', DATA_ROW_ID);
+            if (error) throw error;
+            return true;
+        } catch (e) {
+            console.error('保存失败:', e);
+            showToast('保存失败: ' + e.message, false);
+            return false;
+        }
+    }
+
+    // ========== 处理上传 ==========
+    async function handleImageUpload(file) {
+        if (!file) return;
+        if (!file.type.startsWith('image/')) { showToast("请选择图片文件", false); return; }
+        if (file.size > 100 * 1024 * 1024) { showToast("图片不能超过100MB", false); return; }
+        
+        loadingOverlay.style.display = 'flex';
+        loadingText.innerHTML = '上传到阿里云 OSS...';
+        
+        try {
+            const imageUrl = await uploadToOSS(file, (percent) => {
+                loadingText.innerHTML = `上传中... ${Math.round(percent)}%`;
+            });
+            
+            loadingText.innerHTML = '保存到数据库...';
+            
+            const targetTag = pendingTagForUpload || currentTagId;
+            if (!worksData.contents[targetTag]) worksData.contents[targetTag] = [];
+            
+            modalTitle.innerText = "添加作品";
+            modalInput1.value = "";
+            modalInput2.value = "";
+            modalInput2.style.display = 'block';
+            modal.style.display = 'flex';
+            
+            modalConfirmBtn.onclick = async () => {
+                const title = modalInput1.value.trim() || "新作";
+                const desc = modalInput2.value.trim() || "";
+                worksData.contents[targetTag].push({ type: "image", url: imageUrl, title, desc });
+                await saveToCloud(worksData);
+                if (targetTag === currentTagId) updateList();
+                renderTags();
+                modal.style.display = 'none';
+                showToast("上传成功");
+                loadingOverlay.style.display = 'none';
+                pendingTagForUpload = null;
+            };
+            modalCancel.onclick = () => { modal.style.display = 'none'; loadingOverlay.style.display = 'none'; pendingTagForUpload = null; };
+        } catch (err) {
+            loadingOverlay.style.display = 'none';
+            showToast("上传失败: " + err.message, false);
+        }
+    }
+
+    // ========== UI 渲染 ==========
+    function renderTags() {
+        tagsContainer.innerHTML = '';
+        const sorted = [...worksData.tags].sort((a,b) => a.order - b.order);
+        sorted.forEach(tag => {
+            const div = document.createElement('div');
+            div.className = `tag-item ${currentTagId === tag.id ? 'active' : ''}`;
+            div.innerHTML = `
+                <span class="tag-name">${escapeHtml(tag.name)}</span>
+                <div class="tag-actions">
+                    <i class="fas fa-cloud-upload-alt" data-action="upload" data-id="${tag.id}" title="上传图片到OSS"></i>
+                    <i class="fas fa-pen" data-action="edit" data-id="${tag.id}" title="重命名"></i>
+                    <i class="fas fa-arrow-up" data-action="up" data-id="${tag.id}"></i>
+                    <i class="fas fa-arrow-down" data-action="down" data-id="${tag.id}"></i>
+                </div>
+            `;
+            div.addEventListener('click', (e) => {
+                if (e.target.closest('.tag-actions')) return;
+                currentTagId = tag.id;
+                updateList();
+                renderTags();
+                if (adminMode) renderAdminBar();
+            });
+            tagsContainer.appendChild(div);
+        });
+        if (adminMode) bindTagActions();
+    }
+
+    function bindTagActions() {
+        document.querySelectorAll('.tag-actions i').forEach(icon => {
+            icon.removeEventListener('click', icon._listener);
+            const action = icon.dataset.action;
+            const tagId = icon.dataset.id;
+            const handler = (e) => {
+                e.stopPropagation();
+                if (action === 'upload') { pendingTagForUpload = tagId; fileInput.click(); }
+                else if (action === 'edit') editTag(tagId);
+                else if (action === 'up') moveTag(tagId, -1);
+                else if (action === 'down') moveTag(tagId, 1);
+            };
+            icon.addEventListener('click', handler);
+            icon._listener = handler;
+        });
+    }
+
+    async function editTag(tagId) {
+        const tag = worksData.tags.find(t => t.id === tagId);
+        if (!tag) return;
+        modalTitle.innerText = "修改分类";
+        modalInput1.value = tag.name;
+        modalInput2.style.display = 'none';
+        modal.style.display = 'flex';
+        modalConfirmBtn.onclick = async () => {
+            const newName = modalInput1.value.trim();
+            if (newName) tag.name = newName;
+            await saveToCloud(worksData);
+            modal.style.display = 'none';
+            renderTags();
+            showToast("已修改");
+        };
+        modalCancel.onclick = () => modal.style.display = 'none';
+    }
+
+    async function moveTag(tagId, dir) {
+        const idx = worksData.tags.findIndex(t => t.id === tagId);
+        if (idx === -1) return;
+        const target = idx + dir;
+        if (target < 0 || target >= worksData.tags.length) return;
+        [worksData.tags[idx].order, worksData.tags[target].order] = [worksData.tags[target].order, worksData.tags[idx].order];
+        worksData.tags.sort((a,b) => a.order - b.order);
+        await saveToCloud(worksData);
+        renderTags();
+        updateList();
+        showToast("顺序已调整");
+    }
+
+    async function createNewTag() {
+        modalTitle.innerText = "新建分类";
+        modalInput1.value = "";
+        modalInput2.style.display = 'none';
+        modal.style.display = 'flex';
+        modalConfirmBtn.onclick = async () => {
+            const name = modalInput1.value.trim();
+            if (!name) { showToast("请输入名称", false); return; }
+            const newId = "tag_" + Date.now();
+            const maxOrder = Math.max(...worksData.tags.map(t => t.order), -1);
+            worksData.tags.push({ id: newId, name, order: maxOrder + 1 });
+            worksData.contents[newId] = [];
+            await saveToCloud(worksData);
+            modal.style.display = 'none';
+            renderTags();
+            showToast("分类已创建");
+        };
+        modalCancel.onclick = () => modal.style.display = 'none';
+    }
+
+    async function modifyCurrentImage() {
+        if (!currentList.length) return;
+        const item = currentList[currentIdx];
+        modalTitle.innerText = "编辑作品";
+        modalInput1.value = item.title;
+        modalInput2.value = item.desc;
+        modalInput2.style.display = 'block';
+        modal.style.display = 'flex';
+        modalConfirmBtn.onclick = async () => {
+            item.title = modalInput1.value.trim() || "未命名";
+            item.desc = modalInput2.value.trim();
+            await saveToCloud(worksData);
+            modal.style.display = 'none';
+            loadImageByIndex();
+            showToast("已更新");
+        };
+        modalCancel.onclick = () => modal.style.display = 'none';
+    }
+
+    async function deleteCurrentImage() {
+        if (!currentList.length) return;
+        if (confirm("删除当前作品？")) {
+            const items = worksData.contents[currentTagId];
+            const idx = items.findIndex(i => i.url === currentList[currentIdx].url);
+            if (idx !== -1) items.splice(idx, 1);
+            await saveToCloud(worksData);
+            updateList();
+            renderTags();
+            showToast("已删除");
+        }
+    }
+
+    function renderAdminBar() {
+        if (!adminMode) { adminPanelDiv.style.display = 'none'; return; }
+        adminPanelDiv.style.display = 'block';
+        adminPanelDiv.innerHTML = `<div class="admin-toolbar">
+            <button id="newTagBtn"><i class="fas fa-tag"></i> 新建分类</button>
+            <button id="editMediaBtn"><i class="fas fa-edit"></i> 编辑当前</button>
+            <button id="delMediaBtn"><i class="fas fa-trash"></i> 删除当前</button>
+        </div>`;
+        document.getElementById("newTagBtn")?.addEventListener('click', () => createNewTag());
+        document.getElementById("editMediaBtn")?.addEventListener('click', () => modifyCurrentImage());
+        document.getElementById("delMediaBtn")?.addEventListener('click', () => deleteCurrentImage());
+    }
+
+    function toggleAdminMode() {
+        adminMode = !adminMode;
+        document.body.classList.toggle('admin-mode', adminMode);
+        adminToggle.innerHTML = adminMode ? '<i class="fas fa-eye"></i> 访问者模式' : '<i class="fas fa-user-shield"></i> 管理模式';
+        renderTags();
+        if (adminMode) renderAdminBar(); else adminPanelDiv.style.display = 'none';
+        showToast(adminMode ? "管理模式已开启" : "已退出管理");
+    }
+
+    function handleSecretKey(e) {
+        if (e.key.toLowerCase() !== 'd') return;
+        if (dTimer) clearTimeout(dTimer);
+        dCount++;
+        if (dCount < 5) showToast(`🔑 ${dCount}/5`, false);
+        dTimer = setTimeout(() => { if (dCount > 0 && dCount < 5) showToast("重置", false); dCount = 0; }, 800);
+        if (dCount === 5) { dCount = 0; clearTimeout(dTimer); adminToggle.classList.add('visible'); showToast("管理模式按钮已显示", true); }
+    }
+
+    function escapeHtml(str) { if (!str) return ''; return str.replace(/[&<>]/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[m])); }
+
+    // 初始化
+    async function init() {
+        loadingOverlay.style.display = 'flex';
+        loadingText.innerHTML = '连接云端...';
+        
+        initOSSClient();
+        
+        let cloudData = await loadFromCloud();
+        if (cloudData && cloudData.tags && cloudData.contents) {
+            worksData = cloudData;
+            console.log('云端加载成功');
+        } else {
+            worksData = {
+                tags: [
+                    { id: "street", name: "街头摄影", order: 0 },
+                    { id: "portrait", name: "人像摄影", order: 1 },
+                    { id: "video", name: "视频作品", order: 2 },
+                    { id: "performance", name: "演出经历", order: 3 },
+                    { id: "other", name: "其它能力", order: 4 }
+                ],
+                contents: {
+                    street: [{ type: "image", url: "https://picsum.photos/id/104/1600/900", title: "雨夜霓虹", desc: "城市街角" }],
+                    portrait: [{ type: "image", url: "https://picsum.photos/id/64/1200/1600", title: "沉思", desc: "侧脸轮廓" }],
+                    video: [{ type: "image", url: "https://picsum.photos/id/26/1600/900", title: "城市漫游", desc: "视觉散文" }],
+                    performance: [{ type: "image", url: "https://picsum.photos/id/29/1600/900", title: "舞台瞬间", desc: "剧场灯光" }],
+                    other: [{ type: "image", url: "https://picsum.photos/id/31/1200/1200", title: "数字插画", desc: "AI艺术" }]
+                }
+            };
+            await saveToCloud(worksData);
+        }
+        
+        loadingOverlay.style.display = 'none';
+        
+        renderTags();
+        updateList();
+        
+        prevBtn.onclick = () => { if (currentList.length) { currentIdx = (currentIdx - 1 + currentList.length) % currentList.length; loadImageByIndex(); } };
+        nextBtn.onclick = () => { if (currentList.length) { currentIdx = (currentIdx + 1) % currentList.length; loadImageByIndex(); } };
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowLeft') { prevBtn.click(); e.preventDefault(); }
+            if (e.key === 'ArrowRight') { nextBtn.click(); e.preventDefault(); }
+            handleSecretKey(e);
+        });
+        adminToggle.onclick = toggleAdminMode;
+        fileInput.onchange = (e) => { if (e.target.files?.[0]) handleImageUpload(e.target.files[0]); fileInput.value = ''; };
+        window.onclick = (e) => { if (e.target === modal) modal.style.display = 'none'; };
+        adminToggle.classList.remove('visible');
+        showToast("🎨 连按5次D显示管理入口 | 阿里云OSS存储", false);
+        
+        setInterval(async () => {
+            let fresh = await loadFromCloud();
+            if (fresh && JSON.stringify(fresh) !== JSON.stringify(worksData)) {
+                worksData = fresh;
+                renderTags();
+                updateList();
+                showToast("已同步云端更新", true);
+            }
+        }, 30000);
+    }
+    
+    init();
+</script>
+</body>
+</html>
